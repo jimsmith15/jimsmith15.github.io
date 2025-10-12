@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Chatroom</title>
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
   <style>
     * {
       margin: 0;
@@ -362,6 +365,21 @@
   </div>
 
   <script>
+    // Firebase configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyDEdZqH4JFZVtnDABToC9tuArJLmPHyDlY",
+      authDomain: "chatroom-8db72.firebaseapp.com",
+      databaseURL: "https://chatroom-8db72-default-rtdb.firebaseio.com",
+      projectId: "chatroom-8db72",
+      storageBucket: "chatroom-8db72.firebasestorage.app",
+      messagingSenderId: "223116363813",
+      appId: "1:223116363813:web:6aa1bea94ac21f6a14d7cc"
+    };
+
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+    const database = firebase.database();
+
     class Chatroom {
       constructor() {
         this.currentUser = null;
@@ -369,14 +387,16 @@
         this.messages = [];
         this.isTyping = false;
         this.typingTimeout = null;
-        this.ws = null;
         this.roomCode = null;
         this.isConnected = false;
+        this.roomRef = null;
+        this.messagesRef = null;
+        this.usersRef = null;
+        this.typingRef = null;
         
         this.initializeElements();
         this.bindEvents();
-        this.loadStoredData();
-        this.connectToServer();
+        this.checkConnection();
       }
 
       initializeElements() {
@@ -440,40 +460,13 @@
         });
       }
 
-      connectToServer() {
-        // Try to connect to WebSocket server
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.hostname}:3000`;
-        
-        try {
-          this.ws = new WebSocket(wsUrl);
-          
-          this.ws.onopen = () => {
-            console.log('Connected to server');
-            this.isConnected = true;
-            this.updateConnectionStatus(true);
-          };
-          
-          this.ws.onmessage = (event) => {
-            this.handleServerMessage(JSON.parse(event.data));
-          };
-          
-          this.ws.onclose = () => {
-            console.log('Disconnected from server');
-            this.isConnected = false;
-            this.updateConnectionStatus(false);
-            // Try to reconnect after 3 seconds
-            setTimeout(() => this.connectToServer(), 3000);
-          };
-          
-          this.ws.onerror = (error) => {
-            console.error('WebSocket error:', error);
-            this.updateConnectionStatus(false);
-          };
-        } catch (error) {
-          console.error('Failed to connect to server:', error);
-          this.updateConnectionStatus(false);
-        }
+      checkConnection() {
+        // Check Firebase connection
+        const connectedRef = database.ref('.info/connected');
+        connectedRef.on('value', (snapshot) => {
+          this.isConnected = snapshot.val() === true;
+          this.updateConnectionStatus(this.isConnected);
+        });
       }
 
       handleCreateRoom() {
@@ -484,15 +477,13 @@
         }
 
         if (!this.isConnected) {
-          alert('Not connected to server. Please try again.');
+          alert('Not connected to Firebase. Please try again.');
           return;
         }
 
         this.currentUser = username;
-        this.ws.send(JSON.stringify({
-          type: 'createRoom',
-          username: username
-        }));
+        this.roomCode = this.generateRoomCode();
+        this.setupRoom();
       }
 
       handleJoinRoom() {
@@ -510,73 +501,81 @@
         }
 
         if (!this.isConnected) {
-          alert('Not connected to server. Please try again.');
+          alert('Not connected to Firebase. Please try again.');
           return;
         }
 
         this.currentUser = username;
         this.roomCode = roomCode;
-        this.ws.send(JSON.stringify({
-          type: 'join',
-          username: username,
-          roomCode: roomCode
-        }));
+        this.setupRoom();
       }
 
-      handleServerMessage(message) {
-        switch (message.type) {
-          case 'roomCreated':
-            this.roomCode = message.roomCode;
-            this.showRoomCreated(message.roomCode);
-            break;
-          case 'joined':
-            this.roomCode = message.roomCode;
-            this.showJoinedRoom();
-            break;
-          case 'message':
+      generateRoomCode() {
+        return Math.random().toString(36).substring(2, 8).toUpperCase();
+      }
+
+      setupRoom() {
+        this.roomRef = database.ref(`rooms/${this.roomCode}`);
+        this.messagesRef = database.ref(`rooms/${this.roomCode}/messages`);
+        this.usersRef = database.ref(`rooms/${this.roomCode}/users`);
+        this.typingRef = database.ref(`rooms/${this.roomCode}/typing`);
+
+        // Check if room exists (for joining)
+        this.roomRef.once('value', (snapshot) => {
+          if (!snapshot.exists() && this.roomCode !== this.generateRoomCode()) {
+            alert('Room not found');
+            return;
+          }
+
+          // Add user to room
+          this.usersRef.child(this.currentUser).set({
+            username: this.currentUser,
+            joinedAt: firebase.database.ServerValue.TIMESTAMP
+          });
+
+          // Listen for messages
+          this.messagesRef.on('child_added', (snapshot) => {
+            const message = snapshot.val();
             this.displayMessage(message);
-            break;
-          case 'system':
-            this.addSystemMessage(message.content);
-            break;
-          case 'userList':
-            this.updateUsersList(message.users);
-            break;
-          case 'typing':
-            this.handleTypingIndicator(message);
-            break;
-          case 'error':
-            alert(message.message);
-            break;
-        }
+          });
+
+          // Listen for users
+          this.usersRef.on('value', (snapshot) => {
+            const users = snapshot.val() || {};
+            const userList = Object.keys(users);
+            this.updateUsersList(userList);
+          });
+
+          // Listen for typing indicators
+          this.typingRef.on('value', (snapshot) => {
+            const typing = snapshot.val() || {};
+            this.handleTypingIndicators(typing);
+          });
+
+          // Show room interface
+          this.showRoomInterface();
+        });
       }
 
-      showRoomCreated(roomCode) {
+      showRoomInterface() {
         this.loginModal.classList.add('hidden');
         this.chatContainer.classList.remove('hidden');
         this.messageInput.focus();
         
-        // Show room code to user
+        // Show room code
         const roomInfo = document.createElement('div');
         roomInfo.style.cssText = 'background: rgba(76, 175, 80, 0.3); padding: 15px; margin: 20px; border-radius: 10px; text-align: center; color: white;';
         roomInfo.innerHTML = `
-          <h3>🎉 Room Created!</h3>
+          <h3>🎉 Room ${this.roomCode}</h3>
           <p>Share this room code with your friend:</p>
-          <h2 style="font-size: 32px; margin: 10px 0; letter-spacing: 3px;">${roomCode}</h2>
+          <h2 style="font-size: 32px; margin: 10px 0; letter-spacing: 3px;">${this.roomCode}</h2>
           <p style="font-size: 14px; opacity: 0.8;">They can join by entering this code</p>
         `;
         this.chatMessages.appendChild(roomInfo);
         
-        this.addSystemMessage(`Room ${roomCode} created. Waiting for others to join...`);
-      }
-
-      showJoinedRoom() {
-        this.loginModal.classList.add('hidden');
-        this.chatContainer.classList.remove('hidden');
-        this.messageInput.focus();
-        
         this.addSystemMessage(`Joined room ${this.roomCode}`);
       }
+
 
       handleLogin() {
         // This is now handled by the room buttons
@@ -587,11 +586,12 @@
         const content = this.messageInput.value.trim();
         if (!content || !this.currentUser || !this.isConnected) return;
 
-        // Send message to server
-        this.ws.send(JSON.stringify({
-          type: 'chat',
-          content: content
-        }));
+        // Send message to Firebase
+        this.messagesRef.push({
+          sender: this.currentUser,
+          content: content,
+          timestamp: firebase.database.ServerValue.TIMESTAMP
+        });
 
         this.messageInput.value = '';
       }
@@ -634,17 +634,22 @@
         this.scrollToBottom();
       }
 
-      handleTypingIndicator(message) {
-        // Handle typing indicators from other users
+      handleTypingIndicators(typing) {
+        // Remove existing typing indicators
         const existing = document.querySelector('.typing-indicator');
         if (existing) {
           existing.remove();
         }
 
-        if (message.isTyping && message.username !== this.currentUser) {
+        // Show typing indicators for other users
+        const typingUsers = Object.keys(typing).filter(user => 
+          user !== this.currentUser && typing[user] === true
+        );
+
+        if (typingUsers.length > 0) {
           const typingDiv = document.createElement('div');
           typingDiv.className = 'typing-indicator';
-          typingDiv.textContent = `${message.username} is typing...`;
+          typingDiv.textContent = `${typingUsers.join(', ')} ${typingUsers.length === 1 ? 'is' : 'are'} typing...`;
           this.chatMessages.appendChild(typingDiv);
           this.scrollToBottom();
         }
@@ -655,19 +660,13 @@
 
         if (!this.isTyping) {
           this.isTyping = true;
-          this.ws.send(JSON.stringify({
-            type: 'typing',
-            isTyping: true
-          }));
+          this.typingRef.child(this.currentUser).set(true);
         }
 
         clearTimeout(this.typingTimeout);
         this.typingTimeout = setTimeout(() => {
           this.isTyping = false;
-          this.ws.send(JSON.stringify({
-            type: 'typing',
-            isTyping: false
-          }));
+          this.typingRef.child(this.currentUser).set(false);
         }, 1000);
       }
 
@@ -699,9 +698,7 @@
         return div.innerHTML;
       }
 
-      loadStoredData() {
-        // No longer needed for real-time chat
-      }
+      // Firebase handles data persistence automatically
     }
 
     // Initialize the chatroom when the page loads
