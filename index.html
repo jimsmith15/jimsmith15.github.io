@@ -333,7 +333,11 @@
     <div class="login-form">
       <h2>Welcome to Chatroom</h2>
       <input type="text" class="login-input" id="usernameInput" placeholder="Enter your nickname" maxlength="20">
-      <button class="login-button" id="loginButton">Join Chat</button>
+      <input type="text" class="login-input" id="roomCodeInput" placeholder="Enter room code (or leave blank to create new)" maxlength="6">
+      <div style="margin: 10px 0; color: rgba(255,255,255,0.8); font-size: 14px;">
+        <button type="button" id="createRoomBtn" style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 8px 16px; border-radius: 5px; cursor: pointer; margin-right: 10px;">Create New Room</button>
+        <button type="button" id="joinRoomBtn" style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 8px 16px; border-radius: 5px; cursor: pointer;">Join Room</button>
+      </div>
     </div>
   </div>
 
@@ -403,40 +407,14 @@
         this.loginModal = document.getElementById('loginModal');
         this.chatContainer = document.getElementById('chatContainer');
         this.usernameInput = document.getElementById('usernameInput');
-        this.loginButton = document.getElementById('loginButton');
         this.chatMessages = document.getElementById('chatMessages');
         this.usersList = document.getElementById('usersList');
         this.messageForm = document.getElementById('messageForm');
         this.messageInput = document.getElementById('messageInput');
         this.connectionStatus = document.getElementById('connectionStatus');
-        
-        // Add room code input
-        this.addRoomCodeInput();
-      }
-
-      addRoomCodeInput() {
-        const loginForm = document.querySelector('.login-form');
-        const existingInput = document.getElementById('roomCodeInput');
-        
-        if (!existingInput) {
-          const roomCodeDiv = document.createElement('div');
-          roomCodeDiv.innerHTML = `
-            <input type="text" class="login-input" id="roomCodeInput" placeholder="Enter room code (or leave blank to create new)" maxlength="6">
-            <div style="margin: 10px 0; color: rgba(255,255,255,0.8); font-size: 14px;">
-              <button type="button" id="createRoomBtn" style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 8px 16px; border-radius: 5px; cursor: pointer; margin-right: 10px;">Create New Room</button>
-              <button type="button" id="joinRoomBtn" style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 8px 16px; border-radius: 5px; cursor: pointer;">Join Room</button>
-            </div>
-          `;
-          loginForm.insertBefore(roomCodeDiv, this.loginButton);
-        }
       }
 
       bindEvents() {
-        this.loginButton.addEventListener('click', () => this.handleLogin());
-        this.usernameInput.addEventListener('keypress', (e) => {
-          if (e.key === 'Enter') this.handleLogin();
-        });
-
         // Room buttons
         document.addEventListener('click', (e) => {
           if (e.target.id === 'createRoomBtn') {
@@ -525,51 +503,61 @@
         this.typingRef = db.collection('rooms').doc(this.roomCode).collection('typing');
 
         // Check if room exists (for joining only)
-        this.roomRef.get().then((doc) => {
-          // Only check for existing room if we're joining (not creating)
-          if (!this.isCreatingRoom && !doc.exists) {
+        if (!this.isCreatingRoom) {
+          // Check if room exists by looking for users in the room
+          this.usersRef.limit(1).get().then((snapshot) => {
+            if (snapshot.empty) {
+              alert('Room not found');
+              return;
+            }
+            this.setupRoomListeners();
+          }).catch(() => {
             alert('Room not found');
             return;
-          }
-
-          // Add user to room
-          this.usersRef.doc(this.currentUser).set({
-            username: this.currentUser,
-            joinedAt: firebase.firestore.FieldValue.serverTimestamp()
           });
+        } else {
+          this.setupRoomListeners();
+        }
+      }
 
-          // Listen for messages
-          this.messagesRef.orderBy('timestamp', 'asc').onSnapshot((snapshot) => {
-            snapshot.docChanges().forEach((change) => {
-              if (change.type === 'added') {
-                const message = change.doc.data();
-                message.id = change.doc.id;
-                this.displayMessage(message);
-              }
-            });
-          });
-
-          // Listen for users
-          this.usersRef.onSnapshot((snapshot) => {
-            const userList = [];
-            snapshot.forEach((doc) => {
-              userList.push(doc.id);
-            });
-            this.updateUsersList(userList);
-          });
-
-          // Listen for typing indicators
-          this.typingRef.onSnapshot((snapshot) => {
-            const typing = {};
-            snapshot.forEach((doc) => {
-              typing[doc.id] = doc.data().isTyping;
-            });
-            this.handleTypingIndicators(typing);
-          });
-
-          // Show room interface
-          this.showRoomInterface();
+      setupRoomListeners() {
+        // Add user to room
+        this.usersRef.doc(this.currentUser).set({
+          username: this.currentUser,
+          joinedAt: firebase.firestore.FieldValue.serverTimestamp()
         });
+
+        // Listen for messages
+        this.messagesRef.orderBy('timestamp', 'asc').onSnapshot((snapshot) => {
+          snapshot.docChanges().forEach((change) => {
+            if (change.type === 'added') {
+              const message = change.doc.data();
+              message.id = change.doc.id;
+              this.displayMessage(message);
+            }
+          });
+        });
+
+        // Listen for users
+        this.usersRef.onSnapshot((snapshot) => {
+          const userList = [];
+          snapshot.forEach((doc) => {
+            userList.push(doc.id);
+          });
+          this.updateUsersList(userList);
+        });
+
+        // Listen for typing indicators
+        this.typingRef.onSnapshot((snapshot) => {
+          const typing = {};
+          snapshot.forEach((doc) => {
+            typing[doc.id] = doc.data().isTyping;
+          });
+          this.handleTypingIndicators(typing);
+        });
+
+        // Show room interface
+        this.showRoomInterface();
       }
 
       showRoomInterface() {
@@ -592,10 +580,6 @@
       }
 
 
-      handleLogin() {
-        // This is now handled by the room buttons
-        alert('Please choose "Create New Room" or "Join Room"');
-      }
 
       sendMessage() {
         const content = this.messageInput.value.trim();
