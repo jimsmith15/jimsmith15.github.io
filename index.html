@@ -6,7 +6,7 @@
   <title>Chatroom</title>
   <!-- Firebase SDK -->
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
   <style>
     * {
       margin: 0;
@@ -378,7 +378,7 @@
 
     // Initialize Firebase
     firebase.initializeApp(firebaseConfig);
-    const database = firebase.database();
+    const db = firebase.firestore();
 
     class Chatroom {
       constructor() {
@@ -461,11 +461,13 @@
       }
 
       checkConnection() {
-        // Check Firebase connection
-        const connectedRef = database.ref('.info/connected');
-        connectedRef.on('value', (snapshot) => {
-          this.isConnected = snapshot.val() === true;
-          this.updateConnectionStatus(this.isConnected);
+        // Check Firestore connection
+        db.enableNetwork().then(() => {
+          this.isConnected = true;
+          this.updateConnectionStatus(true);
+        }).catch((error) => {
+          this.isConnected = false;
+          this.updateConnectionStatus(false);
         });
       }
 
@@ -515,40 +517,50 @@
       }
 
       setupRoom() {
-        this.roomRef = database.ref(`rooms/${this.roomCode}`);
-        this.messagesRef = database.ref(`rooms/${this.roomCode}/messages`);
-        this.usersRef = database.ref(`rooms/${this.roomCode}/users`);
-        this.typingRef = database.ref(`rooms/${this.roomCode}/typing`);
+        this.roomRef = db.collection('rooms').doc(this.roomCode);
+        this.messagesRef = db.collection('rooms').doc(this.roomCode).collection('messages');
+        this.usersRef = db.collection('rooms').doc(this.roomCode).collection('users');
+        this.typingRef = db.collection('rooms').doc(this.roomCode).collection('typing');
 
         // Check if room exists (for joining)
-        this.roomRef.once('value', (snapshot) => {
-          if (!snapshot.exists() && this.roomCode !== this.generateRoomCode()) {
+        this.roomRef.get().then((doc) => {
+          if (!doc.exists && this.roomCode !== this.generateRoomCode()) {
             alert('Room not found');
             return;
           }
 
           // Add user to room
-          this.usersRef.child(this.currentUser).set({
+          this.usersRef.doc(this.currentUser).set({
             username: this.currentUser,
-            joinedAt: firebase.database.ServerValue.TIMESTAMP
+            joinedAt: firebase.firestore.FieldValue.serverTimestamp()
           });
 
           // Listen for messages
-          this.messagesRef.on('child_added', (snapshot) => {
-            const message = snapshot.val();
-            this.displayMessage(message);
+          this.messagesRef.orderBy('timestamp', 'asc').onSnapshot((snapshot) => {
+            snapshot.docChanges().forEach((change) => {
+              if (change.type === 'added') {
+                const message = change.doc.data();
+                message.id = change.doc.id;
+                this.displayMessage(message);
+              }
+            });
           });
 
           // Listen for users
-          this.usersRef.on('value', (snapshot) => {
-            const users = snapshot.val() || {};
-            const userList = Object.keys(users);
+          this.usersRef.onSnapshot((snapshot) => {
+            const userList = [];
+            snapshot.forEach((doc) => {
+              userList.push(doc.id);
+            });
             this.updateUsersList(userList);
           });
 
           // Listen for typing indicators
-          this.typingRef.on('value', (snapshot) => {
-            const typing = snapshot.val() || {};
+          this.typingRef.onSnapshot((snapshot) => {
+            const typing = {};
+            snapshot.forEach((doc) => {
+              typing[doc.id] = doc.data().isTyping;
+            });
             this.handleTypingIndicators(typing);
           });
 
@@ -586,11 +598,11 @@
         const content = this.messageInput.value.trim();
         if (!content || !this.currentUser || !this.isConnected) return;
 
-        // Send message to Firebase
-        this.messagesRef.push({
+        // Send message to Firestore
+        this.messagesRef.add({
           sender: this.currentUser,
           content: content,
-          timestamp: firebase.database.ServerValue.TIMESTAMP
+          timestamp: firebase.firestore.FieldValue.serverTimestamp()
         });
 
         this.messageInput.value = '';
@@ -660,13 +672,19 @@
 
         if (!this.isTyping) {
           this.isTyping = true;
-          this.typingRef.child(this.currentUser).set(true);
+          this.typingRef.doc(this.currentUser).set({
+            isTyping: true,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+          });
         }
 
         clearTimeout(this.typingTimeout);
         this.typingTimeout = setTimeout(() => {
           this.isTyping = false;
-          this.typingRef.child(this.currentUser).set(false);
+          this.typingRef.doc(this.currentUser).set({
+            isTyping: false,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+          });
         }, 1000);
       }
 

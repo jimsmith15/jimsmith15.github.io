@@ -2,7 +2,7 @@
 
 ## 🔥 Firebase Configuration
 
-Your chatroom now uses Firebase Realtime Database for real-time messaging! Here's how to set it up:
+Your chatroom now uses Firebase Firestore for real-time messaging! Here's how to set it up:
 
 ### Step 1: Create Firebase Project
 
@@ -12,10 +12,10 @@ Your chatroom now uses Firebase Realtime Database for real-time messaging! Here'
 4. Enable Google Analytics (optional)
 5. Click "Create project"
 
-### Step 2: Enable Realtime Database
+### Step 2: Enable Firestore Database
 
-1. In your Firebase project, click "Realtime Database"
-2. Click "Create Database"
+1. In your Firebase project, click "Firestore Database"
+2. Click "Create database"
 3. Choose "Start in test mode" (for now)
 4. Select a location close to you
 5. Click "Done"
@@ -47,27 +47,22 @@ const firebaseConfig = {
 
 ### Step 5: Set Database Rules (Security)
 
-In Firebase Console → Realtime Database → Rules:
+In Firebase Console → Firestore Database → Rules:
 
-```json
-{
-  "rules": {
-    "rooms": {
-      "$roomCode": {
-        ".read": true,
-        ".write": true,
-        "messages": {
-          ".read": true,
-          ".write": true
-        },
-        "users": {
-          ".read": true,
-          ".write": true
-        },
-        "typing": {
-          ".read": true,
-          ".write": true
-        }
+```javascript
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /rooms/{roomCode} {
+      allow read, write: if true;
+      match /messages/{messageId} {
+        allow read, write: if true;
+      }
+      match /users/{userId} {
+        allow read, write: if true;
+      }
+      match /typing/{userId} {
+        allow read, write: if true;
       }
     }
   }
@@ -85,11 +80,12 @@ git push origin main
 ## 🎉 You're Done!
 
 Your chatroom will now work perfectly on GitHub Pages with:
-- ✅ Real-time messaging
+- ✅ Real-time messaging via Firestore
 - ✅ Room creation/joining
 - ✅ User management
 - ✅ Typing indicators
 - ✅ Automatic persistence
+- ✅ Better querying and indexing
 
 ## 🔒 Security Notes
 
@@ -98,12 +94,13 @@ Your chatroom will now work perfectly on GitHub Pages with:
 - Consider rate limiting for message frequency
 - Monitor usage in Firebase Console
 
-## 📊 Firebase Free Tier Limits
+## 📊 Firestore Free Tier Limits
 
 - **Storage**: 1GB
 - **Bandwidth**: 10GB/month
-- **Concurrent connections**: 100
-- **Operations**: 100K/day
+- **Document reads**: 50K/day
+- **Document writes**: 20K/day
+- **Document deletes**: 20K/day
 
 Perfect for personal chatrooms!
 
