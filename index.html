@@ -485,6 +485,7 @@
 
         this.currentUser = username;
         this.roomCode = this.generateRoomCode();
+        this.isCreatingRoom = true;
         this.setupRoom();
       }
 
@@ -509,6 +510,7 @@
 
         this.currentUser = username;
         this.roomCode = roomCode;
+        this.isCreatingRoom = false;
         this.setupRoom();
       }
 
@@ -522,9 +524,10 @@
         this.usersRef = db.collection('rooms').doc(this.roomCode).collection('users');
         this.typingRef = db.collection('rooms').doc(this.roomCode).collection('typing');
 
-        // Check if room exists (for joining)
+        // Check if room exists (for joining only)
         this.roomRef.get().then((doc) => {
-          if (!doc.exists && this.roomCode !== this.generateRoomCode()) {
+          // Only check for existing room if we're joining (not creating)
+          if (!this.isCreatingRoom && !doc.exists) {
             alert('Room not found');
             return;
           }
