@@ -186,6 +186,7 @@
     <div class="method-selector">
       <button class="method-btn active" onclick="setMethod('iframe')" id="btn-iframe">Direct Iframe</button>
       <button class="method-btn" onclick="setMethod('proxy')" id="btn-proxy">Proxy Method</button>
+      <button class="method-btn" onclick="setMethod('dataurl')" id="btn-dataurl">Data URL</button>
       <button class="method-btn" onclick="setMethod('object')" id="btn-object">Object Tag</button>
       <button class="method-btn" onclick="setMethod('embed')" id="btn-embed">Embed Tag</button>
     </div>
@@ -264,6 +265,12 @@
       document.getElementById('embedObject').style.display = 'none';
       document.getElementById('embedEmbed').style.display = 'none';
       document.getElementById('proxyContent').style.display = 'none';
+      
+      // Remove any existing data URL iframe
+      const existingDataIframe = document.getElementById('dataUrlFrame');
+      if (existingDataIframe) {
+        existingDataIframe.remove();
+      }
 
       // Load based on selected method
       switch(currentMethod) {
@@ -272,6 +279,9 @@
           break;
         case 'proxy':
           loadProxy(currentUrl);
+          break;
+        case 'dataurl':
+          loadDataUrl(currentUrl);
           break;
         case 'object':
           loadObject(currentUrl);
@@ -306,16 +316,89 @@
       embed.style.display = 'block';
     }
 
+    function loadDataUrl(url) {
+      const proxyDiv = document.getElementById('proxyContent');
+      proxyDiv.style.display = 'block';
+      proxyDiv.innerHTML = '<p style="text-align: center; padding: 20px;">Loading via proxy to create data URL...</p>';
+
+      // Fetch via proxy and create data URL
+      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+      
+      fetch(proxyUrl)
+        .then(response => {
+          if (!response.ok) throw new Error('Proxy failed');
+          return response.text();
+        })
+        .then(data => {
+          try {
+            const parsed = JSON.parse(data);
+            const html = parsed.contents || parsed.content || data;
+            
+            // Create iframe with data URL
+            const iframe = document.createElement('iframe');
+            iframe.id = 'dataUrlFrame';
+            iframe.style.width = '100%';
+            iframe.style.height = '100%';
+            iframe.style.border = 'none';
+            iframe.sandbox = 'allow-same-origin allow-scripts allow-forms allow-popups allow-modals';
+            
+            // Create data URL from HTML
+            const baseUrl = new URL(url);
+            const processedHtml = rewriteUrls(html, baseUrl);
+            const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(processedHtml);
+            
+            proxyDiv.innerHTML = '';
+            proxyDiv.appendChild(iframe);
+            iframe.src = dataUrl;
+          } catch (e) {
+            proxyDiv.innerHTML = `
+              <div style="text-align: center; padding: 40px; color: white;">
+                <p>Failed to load. Try the Proxy Method instead.</p>
+                <button class="button" onclick="setMethod('proxy'); loadEmbed();" style="margin: 10px;">Try Proxy Method</button>
+              </div>
+            `;
+          }
+        })
+        .catch(error => {
+          proxyDiv.innerHTML = `
+            <div style="text-align: center; padding: 40px; color: white;">
+              <p>Failed to fetch content. Try another method.</p>
+              <button class="button" onclick="setMethod('proxy'); loadEmbed();" style="margin: 10px;">Try Proxy Method</button>
+            </div>
+          `;
+        });
+    }
+
     function loadProxy(url) {
       const proxyDiv = document.getElementById('proxyContent');
       proxyDiv.style.display = 'block';
-      proxyDiv.innerHTML = '<p>Loading via proxy...</p>';
+      proxyDiv.innerHTML = '<p style="text-align: center; padding: 20px;">Loading via proxy...</p>';
 
       // Try multiple CORS proxy services
       const proxies = [
-        `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
-        `https://corsproxy.io/?${encodeURIComponent(url)}`,
-        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+        {
+          url: `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+          parser: (data) => {
+            try {
+              const parsed = JSON.parse(data);
+              return parsed.contents || parsed.content || data;
+            } catch (e) {
+              return data;
+            }
+          }
+        },
+        {
+          url: `https://corsproxy.io/?${encodeURIComponent(url)}`,
+          parser: (data) => data
+        },
+        {
+          url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+          parser: (data) => data
+        },
+        {
+          url: `https://cors-anywhere.herokuapp.com/${url}`,
+          parser: (data) => data
+        }
       ];
 
       let proxyIndex = 0;
@@ -323,7 +406,7 @@
       function tryNextProxy() {
         if (proxyIndex >= proxies.length) {
           proxyDiv.innerHTML = `
-            <div style="text-align: center; padding: 40px;">
+            <div style="text-align: center; padding: 40px; color: white;">
               <h3 style="margin-bottom: 20px;">Proxy methods failed</h3>
               <p style="margin-bottom: 20px;">Try opening in a new tab or use a different method above.</p>
               <button class="button" onclick="openInNewTab()" style="margin: 10px;">Open in New Tab</button>
@@ -332,18 +415,36 @@
           return;
         }
 
-        fetch(proxies[proxyIndex])
+        const proxy = proxies[proxyIndex];
+        
+        fetch(proxy.url)
           .then(response => {
             if (!response.ok) throw new Error('Proxy failed');
             return response.text();
           })
           .then(data => {
-            try {
-              const parsed = JSON.parse(data);
-              proxyDiv.innerHTML = parsed.contents || parsed.content || data;
-            } catch (e) {
-              proxyDiv.innerHTML = data;
-            }
+            let html = proxy.parser(data);
+            
+            // Create a sandboxed iframe to render the HTML
+            const iframe = document.createElement('iframe');
+            iframe.style.width = '100%';
+            iframe.style.height = '100%';
+            iframe.style.border = 'none';
+            iframe.sandbox = 'allow-same-origin allow-scripts allow-forms allow-popups allow-modals';
+            
+            // Rewrite relative URLs to absolute URLs
+            const baseUrl = new URL(url);
+            html = rewriteUrls(html, baseUrl);
+            
+            // Clear and add iframe
+            proxyDiv.innerHTML = '';
+            proxyDiv.appendChild(iframe);
+            
+            // Write HTML to iframe
+            const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+            iframeDoc.open();
+            iframeDoc.write(html);
+            iframeDoc.close();
           })
           .catch(error => {
             proxyIndex++;
@@ -352,6 +453,64 @@
       }
 
       tryNextProxy();
+    }
+
+    function rewriteUrls(html, baseUrl) {
+      // Rewrite relative URLs to absolute URLs
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      
+      // Fix all links
+      doc.querySelectorAll('a[href]').forEach(link => {
+        try {
+          const href = link.getAttribute('href');
+          if (href && !href.startsWith('http') && !href.startsWith('//') && !href.startsWith('#')) {
+            link.href = new URL(href, baseUrl).href;
+          }
+        } catch (e) {}
+      });
+      
+      // Fix all images
+      doc.querySelectorAll('img[src]').forEach(img => {
+        try {
+          const src = img.getAttribute('src');
+          if (src && !src.startsWith('http') && !src.startsWith('//') && !src.startsWith('data:')) {
+            img.src = new URL(src, baseUrl).href;
+          }
+        } catch (e) {}
+      });
+      
+      // Fix all scripts
+      doc.querySelectorAll('script[src]').forEach(script => {
+        try {
+          const src = script.getAttribute('src');
+          if (src && !src.startsWith('http') && !src.startsWith('//')) {
+            script.src = new URL(src, baseUrl).href;
+          }
+        } catch (e) {}
+      });
+      
+      // Fix all stylesheets
+      doc.querySelectorAll('link[href]').forEach(link => {
+        try {
+          const href = link.getAttribute('href');
+          if (href && !href.startsWith('http') && !href.startsWith('//')) {
+            link.href = new URL(href, baseUrl).href;
+          }
+        } catch (e) {}
+      });
+      
+      // Fix all iframes
+      doc.querySelectorAll('iframe[src]').forEach(iframe => {
+        try {
+          const src = iframe.getAttribute('src');
+          if (src && !src.startsWith('http') && !src.startsWith('//')) {
+            iframe.src = new URL(src, baseUrl).href;
+          }
+        } catch (e) {}
+      });
+      
+      return doc.documentElement.outerHTML;
     }
 
     function openInNewTab() {
