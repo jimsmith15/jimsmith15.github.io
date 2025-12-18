@@ -184,10 +184,10 @@
     </div>
 
     <div class="method-selector">
-      <button class="method-btn active" onclick="setMethod('iframe')" id="btn-iframe">Direct Iframe</button>
+      <button class="method-btn active" onclick="setMethod('browser')" id="btn-browser">🌐 Browser</button>
+      <button class="method-btn" onclick="setMethod('iframe')" id="btn-iframe">Direct Iframe</button>
+      <button class="method-btn" onclick="setMethod('download')" id="btn-download">Download HTML</button>
       <button class="method-btn" onclick="setMethod('reconstruct')" id="btn-reconstruct">Reconstruct</button>
-      <button class="method-btn" onclick="setMethod('static')" id="btn-static">Static Iframe</button>
-      <button class="method-btn" onclick="setMethod('redirect')" id="btn-redirect">Redirect Service</button>
       <button class="method-btn" onclick="setMethod('proxy')" id="btn-proxy">Proxy Method</button>
       <button class="method-btn" onclick="setMethod('inject')" id="btn-inject">Direct Inject</button>
     </div>
@@ -283,8 +283,14 @@
 
       // Load based on selected method
       switch(currentMethod) {
+        case 'browser':
+          loadBrowser(currentUrl);
+          break;
         case 'iframe':
           loadIframe(currentUrl);
+          break;
+        case 'download':
+          loadDownload(currentUrl);
           break;
         case 'reconstruct':
           loadReconstruct(currentUrl);
@@ -316,14 +322,182 @@
       }
     }
 
+    function loadBrowser(url) {
+      const injectDiv = document.getElementById('injectContent');
+      injectDiv.style.display = 'block';
+      injectDiv.innerHTML = '<p style="text-align: center; padding: 20px; color: #333;">Loading browser proxy...</p>';
+
+      // Try multiple web proxy services that render pages (browser-like)
+      const browserServices = [
+        `https://www.proxysite.com/webproxy.php?b=0&u=${encodeURIComponent(url)}`,
+        `https://www.croxyproxy.com/?url=${encodeURIComponent(url)}`,
+        `https://www.hidemyass.com/proxy/en-us/${encodeURIComponent(url)}`,
+        `https://proxyium.com/${encodeURIComponent(url)}`,
+        `https://www.kproxy.com/browse.php?u=${encodeURIComponent(url)}`,
+        `https://www.proxfree.com/browse.php?u=${encodeURIComponent(url)}&b=4`
+      ];
+
+      let serviceIndex = 0;
+      const frame = document.createElement('iframe');
+      frame.style.width = '100%';
+      frame.style.height = '100%';
+      frame.style.border = 'none';
+      frame.id = 'browserFrame';
+
+      function tryNextService() {
+        if (serviceIndex >= browserServices.length) {
+          injectDiv.innerHTML = `
+            <div style="text-align: center; padding: 40px; color: #333; background: white; border-radius: 10px;">
+              <h3>All browser services blocked</h3>
+              <p style="margin: 20px 0;">Lightspeed appears to be blocking all web proxy services.</p>
+              <p style="margin: 20px 0;">Try the Download HTML method to save the page and open it locally.</p>
+              <button class="button" onclick="setMethod('download'); loadEmbed();" style="background: #667eea; color: white; margin: 10px;">Try Download HTML</button>
+              <button class="button" onclick="openInNewTab()" style="background: #667eea; color: white; margin: 10px;">Open Original URL</button>
+            </div>
+          `;
+          return;
+        }
+
+        frame.src = browserServices[serviceIndex];
+        frame.onerror = function() {
+          serviceIndex++;
+          tryNextService();
+        };
+
+        frame.onload = function() {
+          // Check if iframe loaded successfully
+          try {
+            // If we can access the iframe content, it worked
+            if (frame.contentWindow) {
+              injectDiv.innerHTML = '';
+              injectDiv.appendChild(frame);
+            } else {
+              throw new Error('Cannot access iframe');
+            }
+          } catch (e) {
+            // Cross-origin - that's actually good, means it loaded
+            injectDiv.innerHTML = '';
+            injectDiv.appendChild(frame);
+          }
+        };
+
+        // Timeout fallback
+        setTimeout(() => {
+          if (!frame.parentElement) {
+            serviceIndex++;
+            tryNextService();
+          }
+        }, 5000);
+
+        injectDiv.innerHTML = '';
+        injectDiv.appendChild(frame);
+      }
+
+      tryNextService();
+    }
+
     function loadIframe(url) {
       const frame = document.getElementById('embedFrame');
       frame.src = url;
       frame.style.display = 'block';
       
       frame.onerror = function() {
-        showError('Failed to load via iframe. Try Reconstruct method.');
+        showError('Failed to load via iframe. Try Browser method.');
       };
+    }
+
+    function loadDownload(url) {
+      const injectDiv = document.getElementById('injectContent');
+      injectDiv.style.display = 'block';
+      injectDiv.innerHTML = '<p style="text-align: center; padding: 20px; color: #333;">Fetching HTML to download...</p>';
+
+      // Fetch HTML via proxy
+      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+      
+      fetch(proxyUrl)
+        .then(response => {
+          if (!response.ok) throw new Error('Proxy failed');
+          return response.text();
+        })
+        .then(data => {
+          let html;
+          try {
+            const parsed = JSON.parse(data);
+            html = parsed.contents || parsed.content || data;
+          } catch (e) {
+            html = data;
+          }
+          
+          if (html && html.includes('<')) {
+            const baseUrl = new URL(url);
+            html = rewriteUrls(html, baseUrl);
+            
+            // Create download link
+            const blob = new Blob([html], { type: 'text/html' });
+            const blobUrl = URL.createObjectURL(blob);
+            
+            // Create download link
+            const downloadLink = document.createElement('a');
+            downloadLink.href = blobUrl;
+            downloadLink.download = 'page.html';
+            downloadLink.style.display = 'none';
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
+            
+            // Also try to open in new tab
+            setTimeout(() => {
+              try {
+                const newWindow = window.open(blobUrl, '_blank');
+                if (newWindow) {
+                  injectDiv.innerHTML = `
+                    <div style="text-align: center; padding: 40px; color: #333; background: white; border-radius: 10px;">
+                      <h3>✓ HTML File Created</h3>
+                      <p style="margin: 20px 0;">The page has been downloaded and should open in a new tab.</p>
+                      <p style="margin: 20px 0;">If it didn't open automatically, check your downloads folder for "page.html"</p>
+                      <button class="button" onclick="window.open('${blobUrl}', '_blank')" style="background: #667eea; color: white; margin: 10px;">Open in New Tab</button>
+                      <button class="button" onclick="loadDownload('${url}')" style="background: #667eea; color: white; margin: 10px;">Download Again</button>
+                    </div>
+                  `;
+                } else {
+                  injectDiv.innerHTML = `
+                    <div style="text-align: center; padding: 40px; color: #333; background: white; border-radius: 10px;">
+                      <h3>✓ HTML File Downloaded</h3>
+                      <p style="margin: 20px 0;">The file has been downloaded. Check your downloads folder for "page.html"</p>
+                      <p style="margin: 20px 0;">Open it in your browser to view the page.</p>
+                      <button class="button" onclick="window.open('${blobUrl}', '_blank')" style="background: #667eea; color: white; margin: 10px;">Try Opening Again</button>
+                    </div>
+                  `;
+                }
+              } catch (e) {
+                injectDiv.innerHTML = `
+                  <div style="text-align: center; padding: 40px; color: #333; background: white; border-radius: 10px;">
+                    <h3>✓ HTML File Downloaded</h3>
+                    <p style="margin: 20px 0;">Check your downloads folder for "page.html" and open it in your browser.</p>
+                    <button class="button" onclick="window.open('${blobUrl}', '_blank')" style="background: #667eea; color: white; margin: 10px;">Try Opening in New Tab</button>
+                  </div>
+                `;
+              }
+            }, 500);
+          } else {
+            injectDiv.innerHTML = `
+              <div style="text-align: center; padding: 40px; color: #333;">
+                <h3>No HTML content received</h3>
+                <p>Received: ${html ? html.substring(0, 200) : 'nothing'}...</p>
+                <button class="button" onclick="openInNewTab()" style="margin: 10px; background: #667eea; color: white;">Open Original URL</button>
+              </div>
+            `;
+          }
+        })
+        .catch(error => {
+          injectDiv.innerHTML = `
+            <div style="text-align: center; padding: 40px; color: #333;">
+              <h3>Failed to fetch content</h3>
+              <p>Error: ${error.message}</p>
+              <button class="button" onclick="setMethod('proxy'); loadEmbed();" style="margin: 10px; background: #667eea; color: white;">Try Proxy Method</button>
+            </div>
+          `;
+        });
     }
 
     function loadReconstruct(url) {
