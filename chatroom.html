@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chatroom</title>
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .chat-container {
+      width: 90%;
+      max-width: 1200px;
+      height: 90vh;
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    }
+
+    .chat-header {
+      background: rgba(255, 255, 255, 0.15);
+      padding: 20px;
+      text-align: center;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .chat-header h1 {
+      color: white;
+      font-size: 24px;
+      font-weight: 600;
+    }
+
+    .chat-main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .chat-messages {
+      flex: 1;
+      padding: 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+    }
+
+    .message {
+      background: rgba(255, 255, 255, 0.1);
+      padding: 15px 20px;
+      border-radius: 15px;
+      max-width: 70%;
+      word-wrap: break-word;
+      animation: slideIn 0.3s ease-out;
+    }
+
+    .message.own {
+      background: rgba(103, 126, 234, 0.8);
+      align-self: flex-end;
+      margin-left: auto;
+    }
+
+    .message.other {
+      background: rgba(255, 255, 255, 0.15);
+      align-self: flex-start;
+    }
+
+    .message-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .message-sender {
+      font-weight: 600;
+      color: #fff;
+      font-size: 14px;
+    }
+
+    .message-time {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.7);
+    }
+
+    .message-content {
+      color: white;
+      line-height: 1.4;
+    }
+
+    .users-sidebar {
+      width: 250px;
+      background: rgba(255, 255, 255, 0.1);
+      border-left: 1px solid rgba(255, 255, 255, 0.2);
+      padding: 20px;
+      overflow-y: auto;
+    }
+
+    .users-title {
+      color: white;
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 15px;
+      text-align: center;
+    }
+
+    .user-item {
+      background: rgba(255, 255, 255, 0.1);
+      padding: 10px 15px;
+      border-radius: 10px;
+      margin-bottom: 8px;
+      color: white;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .user-status {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #4ade80;
+    }
+
+    .chat-input-container {
+      padding: 20px;
+      background: rgba(255, 255, 255, 0.1);
+      border-top: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .chat-input-form {
+      display: flex;
+      gap: 15px;
+      align-items: center;
+    }
+
+    .chat-input {
+      flex: 1;
+      padding: 15px 20px;
+      border: none;
+      border-radius: 25px;
+      background: rgba(255, 255, 255, 0.2);
+      color: white;
+      font-size: 16px;
+      outline: none;
+      backdrop-filter: blur(5px);
+    }
+
+    .chat-input::placeholder {
+      color: rgba(255, 255, 255, 0.7);
+    }
+
+    .send-button {
+      padding: 15px 25px;
+      background: linear-gradient(45deg, #667eea, #764ba2);
+      border: none;
+      border-radius: 25px;
+      color: white;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s ease;
+    }
+
+    .send-button:hover {
+      transform: translateY(-2px);
+    }
+
+    .send-button:active {
+      transform: translateY(0);
+    }
+
+    .login-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.8);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+
+    .login-form {
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      padding: 40px;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      text-align: center;
+      min-width: 300px;
+    }
+
+    .login-form h2 {
+      color: white;
+      margin-bottom: 30px;
+      font-size: 24px;
+    }
+
+    .login-input {
+      width: 100%;
+      padding: 15px 20px;
+      border: none;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.2);
+      color: white;
+      font-size: 16px;
+      margin-bottom: 20px;
+      outline: none;
+    }
+
+    .login-input::placeholder {
+      color: rgba(255, 255, 255, 0.7);
+    }
+
+    .login-button {
+      width: 100%;
+      padding: 15px;
+      background: linear-gradient(45deg, #667eea, #764ba2);
+      border: none;
+      border-radius: 10px;
+      color: white;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s ease;
+    }
+
+    .login-button:hover {
+      transform: translateY(-2px);
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @media (max-width: 768px) {
+      .chat-container {
+        width: 95%;
+        height: 95vh;
+      }
+
+      .users-sidebar {
+        display: none;
+      }
+
+      .message {
+        max-width: 85%;
+      }
+
+      .chat-input-form {
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .chat-input {
+        width: 100%;
+      }
+
+      .send-button {
+        width: 100%;
+      }
+    }
+
+    .typing-indicator {
+      color: rgba(255, 255, 255, 0.7);
+      font-style: italic;
+      font-size: 14px;
+      padding: 10px 20px;
+    }
+
+    .connection-status {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      padding: 10px 15px;
+      border-radius: 20px;
+      color: white;
+      font-size: 14px;
+      font-weight: 600;
+      z-index: 100;
+    }
+
+    .connection-status.connected {
+      background: rgba(74, 222, 128, 0.8);
+    }
+
+    .connection-status.disconnected {
+      background: rgba(239, 68, 68, 0.8);
+    }
+  </style>
+</head>
+<body>
+  <div class="connection-status connected" id="connectionStatus">
+    ● Connected
+  </div>
+
+  <!-- Login Modal -->
+  <div class="login-modal" id="loginModal">
+    <div class="login-form">
+      <h2>Welcome to Chatroom</h2>
+      <input type="text" class="login-input" id="usernameInput" placeholder="Enter your nickname" maxlength="20">
+      <input type="text" class="login-input" id="roomCodeInput" placeholder="Enter room code (or leave blank to create new)" maxlength="6">
+      <div style="margin: 10px 0; color: rgba(255,255,255,0.8); font-size: 14px;">
+        <button type="button" id="createRoomBtn" style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 8px 16px; border-radius: 5px; cursor: pointer; margin-right: 10px;">Create New Room</button>
+        <button type="button" id="joinRoomBtn" style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 8px 16px; border-radius: 5px; cursor: pointer;">Join Room</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Chat Container -->
+  <div class="chat-container hidden" id="chatContainer">
+    <div class="chat-header">
+      <h1>💬 Chatroom</h1>
+    </div>
+
+    <div class="chat-main">
+      <div class="chat-messages" id="chatMessages">
+        <!-- Messages will be added here -->
+      </div>
+
+      <div class="users-sidebar">
+        <div class="users-title">👥 Online Users</div>
+        <div id="usersList">
+          <!-- Users will be added here -->
+        </div>
+      </div>
+    </div>
+
+    <div class="chat-input-container">
+      <form class="chat-input-form" id="messageForm">
+        <input type="text" class="chat-input" id="messageInput" placeholder="Type your message..." maxlength="500">
+        <button type="submit" class="send-button">Send</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // Firebase configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyDEdZqH4JFZVtnDABToC9tuArJLmPHyDlY",
+      authDomain: "chatroom-8db72.firebaseapp.com",
+      databaseURL: "https://chatroom-8db72-default-rtdb.firebaseio.com",
+      projectId: "chatroom-8db72",
+      storageBucket: "chatroom-8db72.firebasestorage.app",
+      messagingSenderId: "223116363813",
+      appId: "1:223116363813:web:6aa1bea94ac21f6a14d7cc"
+    };
+
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    class Chatroom {
+      constructor() {
+        this.currentUser = null;
+        this.users = new Set();
+        this.messages = [];
+        this.isTyping = false;
+        this.typingTimeout = null;
+        this.roomCode = null;
+        this.isConnected = false;
+        this.roomRef = null;
+        this.messagesRef = null;
+        this.usersRef = null;
+        this.typingRef = null;
+        
+        this.initializeElements();
+        this.bindEvents();
+        this.checkConnection();
+      }
+
+      initializeElements() {
+        this.loginModal = document.getElementById('loginModal');
+        this.chatContainer = document.getElementById('chatContainer');
+        this.usernameInput = document.getElementById('usernameInput');
+        this.chatMessages = document.getElementById('chatMessages');
+        this.usersList = document.getElementById('usersList');
+        this.messageForm = document.getElementById('messageForm');
+        this.messageInput = document.getElementById('messageInput');
+        this.connectionStatus = document.getElementById('connectionStatus');
+      }
+
+      bindEvents() {
+        // Room buttons
+        document.addEventListener('click', (e) => {
+          if (e.target.id === 'createRoomBtn') {
+            this.handleCreateRoom();
+          } else if (e.target.id === 'joinRoomBtn') {
+            this.handleJoinRoom();
+          }
+        });
+
+        this.messageForm.addEventListener('submit', (e) => {
+          e.preventDefault();
+          this.sendMessage();
+        });
+
+        this.messageInput.addEventListener('input', () => this.handleTyping());
+        this.messageInput.addEventListener('keypress', (e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            this.sendMessage();
+          }
+        });
+      }
+
+      checkConnection() {
+        // Check Firestore connection
+        db.enableNetwork().then(() => {
+          this.isConnected = true;
+          this.updateConnectionStatus(true);
+        }).catch((error) => {
+          this.isConnected = false;
+          this.updateConnectionStatus(false);
+        });
+      }
+
+      handleCreateRoom() {
+        const username = this.usernameInput.value.trim();
+        if (!username) {
+          alert('Please enter a nickname');
+          return;
+        }
+
+        if (!this.isConnected) {
+          alert('Not connected to Firebase. Please try again.');
+          return;
+        }
+
+        this.currentUser = username;
+        this.roomCode = this.generateRoomCode();
+        this.isCreatingRoom = true;
+        this.setupRoom();
+      }
+
+      handleJoinRoom() {
+        const username = this.usernameInput.value.trim();
+        const roomCode = document.getElementById('roomCodeInput').value.trim().toUpperCase();
+        
+        if (!username) {
+          alert('Please enter a nickname');
+          return;
+        }
+
+        if (!roomCode) {
+          alert('Please enter a room code');
+          return;
+        }
+
+        if (!this.isConnected) {
+          alert('Not connected to Firebase. Please try again.');
+          return;
+        }
+
+        this.currentUser = username;
+        this.roomCode = roomCode;
+        this.isCreatingRoom = false;
+        this.setupRoom();
+      }
+
+      generateRoomCode() {
+        return Math.random().toString(36).substring(2, 8).toUpperCase();
+      }
+
+      setupRoom() {
+        this.roomRef = db.collection('rooms').doc(this.roomCode);
+        this.messagesRef = db.collection('rooms').doc(this.roomCode).collection('messages');
+        this.usersRef = db.collection('rooms').doc(this.roomCode).collection('users');
+        this.typingRef = db.collection('rooms').doc(this.roomCode).collection('typing');
+
+        // Check if room exists (for joining only)
+        if (!this.isCreatingRoom) {
+          // Check if room exists by looking for users in the room
+          this.usersRef.limit(1).get().then((snapshot) => {
+            if (snapshot.empty) {
+              alert('Room not found');
+              return;
+            }
+            this.setupRoomListeners();
+          }).catch(() => {
+            alert('Room not found');
+            return;
+          });
+        } else {
+          this.setupRoomListeners();
+        }
+      }
+
+      setupRoomListeners() {
+        // Add user to room
+        this.usersRef.doc(this.currentUser).set({
+          username: this.currentUser,
+          joinedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        // Listen for messages
+        this.messagesRef.orderBy('timestamp', 'asc').onSnapshot((snapshot) => {
+          snapshot.docChanges().forEach((change) => {
+            if (change.type === 'added') {
+              const message = change.doc.data();
+              message.id = change.doc.id;
+              this.displayMessage(message);
+            }
+          });
+        });
+
+        // Listen for users
+        this.usersRef.onSnapshot((snapshot) => {
+          const userList = [];
+          snapshot.forEach((doc) => {
+            userList.push(doc.id);
+          });
+          this.updateUsersList(userList);
+        });
+
+        // Listen for typing indicators
+        this.typingRef.onSnapshot((snapshot) => {
+          const typing = {};
+          snapshot.forEach((doc) => {
+            typing[doc.id] = doc.data().isTyping;
+          });
+          this.handleTypingIndicators(typing);
+        });
+
+        // Show room interface
+        this.showRoomInterface();
+      }
+
+      showRoomInterface() {
+        this.loginModal.classList.add('hidden');
+        this.chatContainer.classList.remove('hidden');
+        this.messageInput.focus();
+        
+        // Show room code
+        const roomInfo = document.createElement('div');
+        roomInfo.style.cssText = 'background: rgba(76, 175, 80, 0.3); padding: 15px; margin: 20px; border-radius: 10px; text-align: center; color: white;';
+        roomInfo.innerHTML = `
+          <h3>🎉 Room ${this.roomCode}</h3>
+          <p>Share this room code with your friend:</p>
+          <h2 style="font-size: 32px; margin: 10px 0; letter-spacing: 3px;">${this.roomCode}</h2>
+          <p style="font-size: 14px; opacity: 0.8;">They can join by entering this code</p>
+        `;
+        this.chatMessages.appendChild(roomInfo);
+        
+        this.addSystemMessage(`Joined room ${this.roomCode}`);
+      }
+
+
+
+      sendMessage() {
+        const content = this.messageInput.value.trim();
+        if (!content || !this.currentUser || !this.isConnected) return;
+
+        // Send message to Firestore
+        this.messagesRef.add({
+          sender: this.currentUser,
+          content: content,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        this.messageInput.value = '';
+      }
+
+      displayMessage(message) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${message.sender === this.currentUser ? 'own' : 'other'}`;
+        
+        const timestamp = new Date(message.timestamp);
+        const timeString = timestamp.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        
+        messageDiv.innerHTML = `
+          <div class="message-header">
+            <span class="message-sender">${message.sender}</span>
+            <span class="message-time">${timeString}</span>
+          </div>
+          <div class="message-content">${this.escapeHtml(message.content)}</div>
+        `;
+
+        this.chatMessages.appendChild(messageDiv);
+        this.scrollToBottom();
+      }
+
+      addSystemMessage(content) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message other';
+        messageDiv.style.background = 'rgba(255, 193, 7, 0.3)';
+        
+        const timeString = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        
+        messageDiv.innerHTML = `
+          <div class="message-header">
+            <span class="message-sender">System</span>
+            <span class="message-time">${timeString}</span>
+          </div>
+          <div class="message-content">${this.escapeHtml(content)}</div>
+        `;
+
+        this.chatMessages.appendChild(messageDiv);
+        this.scrollToBottom();
+      }
+
+      handleTypingIndicators(typing) {
+        // Remove existing typing indicators
+        const existing = document.querySelector('.typing-indicator');
+        if (existing) {
+          existing.remove();
+        }
+
+        // Show typing indicators for other users
+        const typingUsers = Object.keys(typing).filter(user => 
+          user !== this.currentUser && typing[user] === true
+        );
+
+        if (typingUsers.length > 0) {
+          const typingDiv = document.createElement('div');
+          typingDiv.className = 'typing-indicator';
+          typingDiv.textContent = `${typingUsers.join(', ')} ${typingUsers.length === 1 ? 'is' : 'are'} typing...`;
+          this.chatMessages.appendChild(typingDiv);
+          this.scrollToBottom();
+        }
+      }
+
+      handleTyping() {
+        if (!this.isConnected || !this.currentUser) return;
+
+        if (!this.isTyping) {
+          this.isTyping = true;
+          this.typingRef.doc(this.currentUser).set({
+            isTyping: true,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+          });
+        }
+
+        clearTimeout(this.typingTimeout);
+        this.typingTimeout = setTimeout(() => {
+          this.isTyping = false;
+          this.typingRef.doc(this.currentUser).set({
+            isTyping: false,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+          });
+        }, 1000);
+      }
+
+      updateUsersList(users) {
+        this.usersList.innerHTML = '';
+        users.forEach(user => {
+          const userDiv = document.createElement('div');
+          userDiv.className = 'user-item';
+          userDiv.innerHTML = `
+            <div class="user-status"></div>
+            <span>${this.escapeHtml(user)}</span>
+          `;
+          this.usersList.appendChild(userDiv);
+        });
+      }
+
+      updateConnectionStatus(connected) {
+        this.connectionStatus.textContent = connected ? '● Connected' : '● Disconnected';
+        this.connectionStatus.className = `connection-status ${connected ? 'connected' : 'disconnected'}`;
+      }
+
+      scrollToBottom() {
+        this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+      }
+
+      escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      }
+
+      // Firebase handles data persistence automatically
+    }
+
+    // Initialize the chatroom when the page loads
+    document.addEventListener('DOMContentLoaded', () => {
+      new Chatroom();
+    });
+  </script>
+</body>
+</html>
+
