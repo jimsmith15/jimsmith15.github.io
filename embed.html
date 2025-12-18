@@ -185,10 +185,10 @@
 
     <div class="method-selector">
       <button class="method-btn active" onclick="setMethod('iframe')" id="btn-iframe">Direct Iframe</button>
+      <button class="method-btn" onclick="setMethod('reconstruct')" id="btn-reconstruct">Reconstruct</button>
       <button class="method-btn" onclick="setMethod('static')" id="btn-static">Static Iframe</button>
       <button class="method-btn" onclick="setMethod('redirect')" id="btn-redirect">Redirect Service</button>
       <button class="method-btn" onclick="setMethod('proxy')" id="btn-proxy">Proxy Method</button>
-      <button class="method-btn" onclick="setMethod('blob')" id="btn-blob">Blob URL</button>
       <button class="method-btn" onclick="setMethod('inject')" id="btn-inject">Direct Inject</button>
     </div>
 
@@ -286,6 +286,9 @@
         case 'iframe':
           loadIframe(currentUrl);
           break;
+        case 'reconstruct':
+          loadReconstruct(currentUrl);
+          break;
         case 'static':
           loadStaticIframe(currentUrl);
           break;
@@ -319,8 +322,122 @@
       frame.style.display = 'block';
       
       frame.onerror = function() {
-        showError('Failed to load via iframe. Try Static Iframe method.');
+        showError('Failed to load via iframe. Try Reconstruct method.');
       };
+    }
+
+    function loadReconstruct(url) {
+      const injectDiv = document.getElementById('injectContent');
+      injectDiv.style.display = 'block';
+      injectDiv.innerHTML = '<p style="text-align: center; padding: 20px; color: #333;">Fetching and reconstructing page...</p>';
+
+      // Fetch HTML via proxy
+      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+      
+      fetch(proxyUrl)
+        .then(response => {
+          if (!response.ok) throw new Error('Proxy failed');
+          return response.text();
+        })
+        .then(data => {
+          let html;
+          try {
+            const parsed = JSON.parse(data);
+            html = parsed.contents || parsed.content || data;
+          } catch (e) {
+            html = data;
+          }
+          
+          // If we got HTML text, reconstruct it properly
+          if (html && html.includes('<')) {
+            const baseUrl = new URL(url);
+            html = rewriteUrls(html, baseUrl);
+            
+            // Try multiple reconstruction methods
+            try {
+              // Method 1: Create new window and write
+              const newWin = window.open('', '_blank', 'width=1200,height=800,scrollbars=yes');
+              if (newWin && !newWin.closed) {
+                newWin.document.open();
+                newWin.document.write(html);
+                newWin.document.close();
+                injectDiv.innerHTML = `
+                  <div style="text-align: center; padding: 40px; color: #333;">
+                    <h3>✓ Page opened in new window</h3>
+                    <p>If popup was blocked, the content should appear below.</p>
+                  </div>
+                `;
+                
+                // Also try to show in iframe as backup
+                setTimeout(() => {
+                  try {
+                    const iframe = document.createElement('iframe');
+                    iframe.style.width = '100%';
+                    iframe.style.height = '100%';
+                    iframe.style.border = 'none';
+                    iframe.srcdoc = html;
+                    
+                    const existingFrame = document.getElementById('reconstructFrame');
+                    if (existingFrame) existingFrame.remove();
+                    
+                    iframe.id = 'reconstructFrame';
+                    injectDiv.appendChild(iframe);
+                  } catch (e) {}
+                }, 500);
+                return;
+              }
+            } catch (e) {}
+            
+            // Method 2: Create iframe with srcdoc
+            try {
+              const iframe = document.createElement('iframe');
+              iframe.id = 'reconstructFrame';
+              iframe.style.width = '100%';
+              iframe.style.height = '100%';
+              iframe.style.border = 'none';
+              iframe.srcdoc = html;
+              
+              injectDiv.innerHTML = '';
+              injectDiv.appendChild(iframe);
+            } catch (e) {
+              // Method 3: Use blob URL
+              try {
+                const blob = new Blob([html], { type: 'text/html' });
+                const blobUrl = URL.createObjectURL(blob);
+                
+                const iframe = document.createElement('iframe');
+                iframe.id = 'reconstructFrame';
+                iframe.style.width = '100%';
+                iframe.style.height = '100%';
+                iframe.style.border = 'none';
+                iframe.src = blobUrl;
+                
+                injectDiv.innerHTML = '';
+                injectDiv.appendChild(iframe);
+              } catch (e2) {
+                // Method 4: Direct injection (last resort)
+                injectDiv.innerHTML = html;
+              }
+            }
+          } else {
+            injectDiv.innerHTML = `
+              <div style="text-align: center; padding: 40px; color: #333;">
+                <h3>No HTML content received</h3>
+                <p>Received: ${html.substring(0, 200)}...</p>
+                <button class="button" onclick="openInNewTab()" style="margin: 10px; background: #667eea; color: white;">Open in New Tab</button>
+              </div>
+            `;
+          }
+        })
+        .catch(error => {
+          injectDiv.innerHTML = `
+            <div style="text-align: center; padding: 40px; color: #333;">
+              <h3>Failed to fetch content</h3>
+              <p>Error: ${error.message}</p>
+              <button class="button" onclick="setMethod('proxy'); loadEmbed();" style="margin: 10px; background: #667eea; color: white;">Try Proxy Method</button>
+            </div>
+          `;
+        });
     }
 
     function loadStaticIframe(url) {
@@ -527,8 +644,43 @@
             const baseUrl = new URL(url);
             html = rewriteUrls(html, baseUrl);
             
-            // Directly inject HTML (no iframe)
-            injectDiv.innerHTML = html;
+            // Try multiple rendering methods
+            try {
+              // Method 1: Create a new window and write HTML
+              const newWindow = window.open('', '_blank', 'width=1200,height=800');
+              if (newWindow) {
+                newWindow.document.write(html);
+                newWindow.document.close();
+                injectDiv.innerHTML = `
+                  <div style="text-align: center; padding: 40px; color: #333;">
+                    <h3>Content opened in new window</h3>
+                    <p>If popup was blocked, try the Reconstruct method below.</p>
+                  </div>
+                `;
+                return;
+              }
+            } catch (e) {}
+            
+            // Method 2: Use document.write in current context (if allowed)
+            try {
+              // Create a sandboxed iframe and write to it
+              const iframe = document.createElement('iframe');
+              iframe.style.width = '100%';
+              iframe.style.height = '100%';
+              iframe.style.border = 'none';
+              iframe.id = 'reconstructFrame';
+              
+              injectDiv.innerHTML = '';
+              injectDiv.appendChild(iframe);
+              
+              const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+              iframeDoc.open();
+              iframeDoc.write(html);
+              iframeDoc.close();
+            } catch (e) {
+              // Method 3: Direct innerHTML (what we were doing before)
+              injectDiv.innerHTML = html;
+            }
           })
           .catch(error => {
             proxyIndex++;
@@ -537,6 +689,46 @@
       }
 
       tryNextProxy();
+    }
+
+    function reconstructFromText(htmlText, baseUrl) {
+      // This function takes HTML text and properly reconstructs it
+      const injectDiv = document.getElementById('injectContent');
+      injectDiv.style.display = 'block';
+      
+      // Process HTML
+      htmlText = rewriteUrls(htmlText, baseUrl);
+      
+      // Try creating a completely isolated rendering context
+      try {
+        // Create iframe with srcdoc
+        const iframe = document.createElement('iframe');
+        iframe.style.width = '100%';
+        iframe.style.height = '100%';
+        iframe.style.border = 'none';
+        iframe.srcdoc = htmlText;
+        
+        injectDiv.innerHTML = '';
+        injectDiv.appendChild(iframe);
+      } catch (e) {
+        // Fallback: try blob URL
+        try {
+          const blob = new Blob([htmlText], { type: 'text/html' });
+          const blobUrl = URL.createObjectURL(blob);
+          
+          const iframe = document.createElement('iframe');
+          iframe.style.width = '100%';
+          iframe.style.height = '100%';
+          iframe.style.border = 'none';
+          iframe.src = blobUrl;
+          
+          injectDiv.innerHTML = '';
+          injectDiv.appendChild(iframe);
+        } catch (e2) {
+          // Last resort: direct injection
+          injectDiv.innerHTML = htmlText;
+        }
+      }
     }
 
     function loadDataUrl(url) {
