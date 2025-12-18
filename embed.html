@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Embed Viewer</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      padding: 30px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    }
+
+    h1 {
+      color: white;
+      margin-bottom: 20px;
+      font-size: 28px;
+      text-align: center;
+    }
+
+    .input-section {
+      margin-bottom: 20px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .url-input {
+      flex: 1;
+      min-width: 300px;
+      padding: 15px 20px;
+      border: none;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.2);
+      color: white;
+      font-size: 16px;
+      outline: none;
+    }
+
+    .url-input::placeholder {
+      color: rgba(255, 255, 255, 0.7);
+    }
+
+    .button {
+      padding: 15px 25px;
+      background: rgba(255, 255, 255, 0.2);
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 10px;
+      color: white;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    .button:hover {
+      background: rgba(255, 255, 255, 0.3);
+      transform: translateY(-2px);
+    }
+
+    .embed-wrapper {
+      width: 100%;
+      height: 80vh;
+      min-height: 600px;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 10px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    .method-selector {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 15px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .method-btn {
+      padding: 10px 20px;
+      background: rgba(255, 255, 255, 0.15);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      border-radius: 8px;
+      color: white;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .method-btn.active {
+      background: rgba(103, 126, 234, 0.8);
+      border-color: rgba(103, 126, 234, 1);
+    }
+
+    .method-btn:hover {
+      background: rgba(255, 255, 255, 0.25);
+    }
+
+    .back-button {
+      display: inline-block;
+      margin-top: 20px;
+      padding: 12px 24px;
+      background: rgba(255, 255, 255, 0.2);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      border-radius: 10px;
+      color: white;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      transition: transform 0.2s ease, background 0.2s ease;
+    }
+
+    .back-button:hover {
+      transform: translateY(-2px);
+      background: rgba(255, 255, 255, 0.3);
+    }
+
+    .error-message {
+      color: #ff6b6b;
+      background: rgba(255, 107, 107, 0.2);
+      padding: 15px;
+      border-radius: 10px;
+      margin-top: 15px;
+      text-align: center;
+    }
+
+    .info-text {
+      color: rgba(255, 255, 255, 0.8);
+      font-size: 14px;
+      margin-top: 10px;
+      text-align: center;
+    }
+
+    @media (max-width: 768px) {
+      .input-section {
+        flex-direction: column;
+      }
+
+      .url-input {
+        min-width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔓 Embed Viewer</h1>
+    
+    <div class="input-section">
+      <input 
+        type="text" 
+        id="urlInput" 
+        class="url-input" 
+        placeholder="Enter URL to embed (e.g., https://example.com)"
+        autocomplete="off"
+      />
+      <button class="button" onclick="loadEmbed()">Load</button>
+      <button class="button" onclick="openInNewTab()">Open in New Tab</button>
+    </div>
+
+    <div class="method-selector">
+      <button class="method-btn active" onclick="setMethod('iframe')" id="btn-iframe">Direct Iframe</button>
+      <button class="method-btn" onclick="setMethod('proxy')" id="btn-proxy">Proxy Method</button>
+      <button class="method-btn" onclick="setMethod('object')" id="btn-object">Object Tag</button>
+      <button class="method-btn" onclick="setMethod('embed')" id="btn-embed">Embed Tag</button>
+    </div>
+
+    <div id="errorMessage" class="error-message" style="display: none;"></div>
+    
+    <div class="embed-wrapper" id="embedWrapper">
+      <iframe id="embedFrame" style="display: none;"></iframe>
+      <object id="embedObject" style="display: none; width: 100%; height: 100%;"></object>
+      <embed id="embedEmbed" style="display: none; width: 100%; height: 100%;"></embed>
+      <div id="proxyContent" style="display: none; width: 100%; height: 100%; overflow: auto; padding: 20px; color: white;">
+        <p>Loading via proxy method...</p>
+      </div>
+    </div>
+
+    <p class="info-text">
+      💡 Tip: If one method doesn't work, try switching to another method above
+    </p>
+
+    <a href="index.html" class="back-button">← Back to Home</a>
+  </div>
+
+  <script>
+    let currentMethod = 'iframe';
+    let currentUrl = '';
+
+    // Load URL from query parameter if present
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlParam = urlParams.get('url');
+    if (urlParam) {
+      document.getElementById('urlInput').value = decodeURIComponent(urlParam);
+      loadEmbed();
+    }
+
+    function setMethod(method) {
+      currentMethod = method;
+      
+      // Update button states
+      document.querySelectorAll('.method-btn').forEach(btn => {
+        btn.classList.remove('active');
+      });
+      document.getElementById(`btn-${method}`).classList.add('active');
+      
+      // Reload with new method if URL is already set
+      if (currentUrl) {
+        loadEmbed();
+      }
+    }
+
+    function loadEmbed() {
+      const url = document.getElementById('urlInput').value.trim();
+      if (!url) {
+        showError('Please enter a URL');
+        return;
+      }
+
+      // Validate URL
+      let validUrl;
+      try {
+        validUrl = new URL(url);
+      } catch (e) {
+        // Try adding https:// if no protocol
+        try {
+          validUrl = new URL('https://' + url);
+        } catch (e2) {
+          showError('Invalid URL format');
+          return;
+        }
+      }
+
+      currentUrl = validUrl.href;
+      hideError();
+
+      // Hide all embed methods
+      document.getElementById('embedFrame').style.display = 'none';
+      document.getElementById('embedObject').style.display = 'none';
+      document.getElementById('embedEmbed').style.display = 'none';
+      document.getElementById('proxyContent').style.display = 'none';
+
+      // Load based on selected method
+      switch(currentMethod) {
+        case 'iframe':
+          loadIframe(currentUrl);
+          break;
+        case 'proxy':
+          loadProxy(currentUrl);
+          break;
+        case 'object':
+          loadObject(currentUrl);
+          break;
+        case 'embed':
+          loadEmbedTag(currentUrl);
+          break;
+      }
+    }
+
+    function loadIframe(url) {
+      const frame = document.getElementById('embedFrame');
+      frame.src = url;
+      frame.style.display = 'block';
+      
+      frame.onerror = function() {
+        showError('Failed to load via iframe. Try another method.');
+      };
+    }
+
+    function loadObject(url) {
+      const obj = document.getElementById('embedObject');
+      obj.data = url;
+      obj.type = 'text/html';
+      obj.style.display = 'block';
+    }
+
+    function loadEmbedTag(url) {
+      const embed = document.getElementById('embedEmbed');
+      embed.src = url;
+      embed.type = 'text/html';
+      embed.style.display = 'block';
+    }
+
+    function loadProxy(url) {
+      const proxyDiv = document.getElementById('proxyContent');
+      proxyDiv.style.display = 'block';
+      proxyDiv.innerHTML = '<p>Loading via proxy...</p>';
+
+      // Try multiple CORS proxy services
+      const proxies = [
+        `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+        `https://corsproxy.io/?${encodeURIComponent(url)}`,
+        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+      ];
+
+      let proxyIndex = 0;
+
+      function tryNextProxy() {
+        if (proxyIndex >= proxies.length) {
+          proxyDiv.innerHTML = `
+            <div style="text-align: center; padding: 40px;">
+              <h3 style="margin-bottom: 20px;">Proxy methods failed</h3>
+              <p style="margin-bottom: 20px;">Try opening in a new tab or use a different method above.</p>
+              <button class="button" onclick="openInNewTab()" style="margin: 10px;">Open in New Tab</button>
+            </div>
+          `;
+          return;
+        }
+
+        fetch(proxies[proxyIndex])
+          .then(response => {
+            if (!response.ok) throw new Error('Proxy failed');
+            return response.text();
+          })
+          .then(data => {
+            try {
+              const parsed = JSON.parse(data);
+              proxyDiv.innerHTML = parsed.contents || parsed.content || data;
+            } catch (e) {
+              proxyDiv.innerHTML = data;
+            }
+          })
+          .catch(error => {
+            proxyIndex++;
+            tryNextProxy();
+          });
+      }
+
+      tryNextProxy();
+    }
+
+    function openInNewTab() {
+      const url = document.getElementById('urlInput').value.trim();
+      if (!url) {
+        showError('Please enter a URL first');
+        return;
+      }
+
+      let validUrl;
+      try {
+        validUrl = new URL(url);
+      } catch (e) {
+        try {
+          validUrl = new URL('https://' + url);
+        } catch (e2) {
+          showError('Invalid URL');
+          return;
+        }
+      }
+
+      window.open(validUrl.href, '_blank');
+    }
+
+    function showError(message) {
+      const errorDiv = document.getElementById('errorMessage');
+      errorDiv.textContent = message;
+      errorDiv.style.display = 'block';
+    }
+
+    function hideError() {
+      document.getElementById('errorMessage').style.display = 'none';
+    }
+
+    // Allow Enter key to load
+    document.getElementById('urlInput').addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        loadEmbed();
+      }
+    });
+  </script>
+</body>
+</html>
+
