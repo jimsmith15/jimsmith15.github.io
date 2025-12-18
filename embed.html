@@ -388,35 +388,78 @@
               }
             } catch (e) {}
             
-            // Method 2: Create iframe with srcdoc
+            // Method 2: Try using replaceChild to inject HTML (bypasses some sanitization)
             try {
-              const iframe = document.createElement('iframe');
-              iframe.id = 'reconstructFrame';
-              iframe.style.width = '100%';
-              iframe.style.height = '100%';
-              iframe.style.border = 'none';
-              iframe.srcdoc = html;
+              // Clear the div first
+              while (injectDiv.firstChild) {
+                injectDiv.removeChild(injectDiv.firstChild);
+              }
               
-              injectDiv.innerHTML = '';
-              injectDiv.appendChild(iframe);
-            } catch (e) {
-              // Method 3: Use blob URL
-              try {
-                const blob = new Blob([html], { type: 'text/html' });
-                const blobUrl = URL.createObjectURL(blob);
+              // Create a temporary container
+              const temp = document.createElement('div');
+              temp.innerHTML = html;
+              
+              // Move all children from temp to injectDiv
+              while (temp.firstChild) {
+                injectDiv.appendChild(temp.firstChild);
+              }
+              
+              // If that didn't work, try using Range API
+              if (injectDiv.children.length === 0) {
+                const range = document.createRange();
+                range.selectNodeContents(injectDiv);
+                range.deleteContents();
                 
+                const fragment = range.createContextualFragment(html);
+                injectDiv.appendChild(fragment);
+              }
+            } catch (e) {
+              // Method 3: Try creating iframe with srcdoc
+              try {
                 const iframe = document.createElement('iframe');
                 iframe.id = 'reconstructFrame';
                 iframe.style.width = '100%';
                 iframe.style.height = '100%';
                 iframe.style.border = 'none';
-                iframe.src = blobUrl;
+                iframe.srcdoc = html;
                 
                 injectDiv.innerHTML = '';
                 injectDiv.appendChild(iframe);
               } catch (e2) {
-                // Method 4: Direct injection (last resort)
-                injectDiv.innerHTML = html;
+                // Method 4: Use blob URL
+                try {
+                  const blob = new Blob([html], { type: 'text/html' });
+                  const blobUrl = URL.createObjectURL(blob);
+                  
+                  const iframe = document.createElement('iframe');
+                  iframe.id = 'reconstructFrame';
+                  iframe.style.width = '100%';
+                  iframe.style.height = '100%';
+                  iframe.style.border = 'none';
+                  iframe.src = blobUrl;
+                  
+                  injectDiv.innerHTML = '';
+                  injectDiv.appendChild(iframe);
+                } catch (e3) {
+                  // Method 5: Try using outerHTML
+                  try {
+                    const wrapper = document.createElement('div');
+                    wrapper.innerHTML = html;
+                    injectDiv.innerHTML = '';
+                    injectDiv.appendChild(wrapper);
+                  } catch (e4) {
+                    // Method 6: Last resort - show HTML source with copy button
+                    injectDiv.innerHTML = `
+                      <div style="padding: 20px; color: #333;">
+                        <h3>HTML Content Received (${html.length} chars)</h3>
+                        <p>Lightspeed may be blocking HTML rendering. Here's the content:</p>
+                        <textarea readonly style="width: 100%; height: 400px; font-family: monospace; padding: 10px; border: 1px solid #ccc; border-radius: 5px;">${html.substring(0, 50000)}</textarea>
+                        <button class="button" onclick="navigator.clipboard.writeText(\`${html.replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`)" style="margin-top: 10px; background: #667eea; color: white;">Copy HTML</button>
+                        <button class="button" onclick="openInNewTab()" style="margin-top: 10px; margin-left: 10px; background: #667eea; color: white;">Open Original URL</button>
+                      </div>
+                    `;
+                  }
+                }
               }
             }
           } else {
@@ -644,43 +687,80 @@
             const baseUrl = new URL(url);
             html = rewriteUrls(html, baseUrl);
             
-            // Try multiple rendering methods
+            // Try multiple rendering methods that bypass Lightspeed restrictions
             try {
-              // Method 1: Create a new window and write HTML
+              // Method 1: Use Range API to inject HTML (bypasses some sanitization)
+              while (injectDiv.firstChild) {
+                injectDiv.removeChild(injectDiv.firstChild);
+              }
+              
+              const range = document.createRange();
+              range.selectNodeContents(injectDiv);
+              range.deleteContents();
+              
+              const fragment = range.createContextualFragment(html);
+              injectDiv.appendChild(fragment);
+              
+              // Check if HTML was actually rendered (not just text)
+              if (injectDiv.querySelector('body') || injectDiv.querySelector('div') || injectDiv.querySelector('script')) {
+                // Success - HTML was rendered
+                return;
+              }
+            } catch (e) {}
+            
+            // Method 2: Try using replaceChild approach
+            try {
+              const temp = document.createElement('div');
+              temp.innerHTML = html;
+              
+              injectDiv.innerHTML = '';
+              while (temp.firstChild) {
+                injectDiv.appendChild(temp.firstChild);
+              }
+              
+              if (injectDiv.children.length > 0 && injectDiv.querySelector('body, div, script')) {
+                return;
+              }
+            } catch (e) {}
+            
+            // Method 3: Try creating new window
+            try {
               const newWindow = window.open('', '_blank', 'width=1200,height=800');
               if (newWindow) {
                 newWindow.document.write(html);
                 newWindow.document.close();
                 injectDiv.innerHTML = `
                   <div style="text-align: center; padding: 40px; color: #333;">
-                    <h3>Content opened in new window</h3>
-                    <p>If popup was blocked, try the Reconstruct method below.</p>
+                    <h3>✓ Content opened in new window</h3>
+                    <p>Check the popup window. If blocked, content appears below.</p>
                   </div>
                 `;
+                
+                // Also try to render in page as backup
+                setTimeout(() => {
+                  try {
+                    const wrapper = document.createElement('div');
+                    wrapper.innerHTML = html;
+                    injectDiv.appendChild(wrapper);
+                  } catch (e) {}
+                }, 1000);
                 return;
               }
             } catch (e) {}
             
-            // Method 2: Use document.write in current context (if allowed)
-            try {
-              // Create a sandboxed iframe and write to it
-              const iframe = document.createElement('iframe');
-              iframe.style.width = '100%';
-              iframe.style.height = '100%';
-              iframe.style.border = 'none';
-              iframe.id = 'reconstructFrame';
-              
-              injectDiv.innerHTML = '';
-              injectDiv.appendChild(iframe);
-              
-              const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-              iframeDoc.open();
-              iframeDoc.write(html);
-              iframeDoc.close();
-            } catch (e) {
-              // Method 3: Direct innerHTML (what we were doing before)
-              injectDiv.innerHTML = html;
-            }
+            // Method 4: Last resort - show that we got HTML but can't render
+            injectDiv.innerHTML = `
+              <div style="padding: 20px; color: #333; background: white; border-radius: 10px;">
+                <h3>HTML Content Received</h3>
+                <p>Lightspeed appears to be blocking HTML rendering. Received ${html.length} characters of HTML.</p>
+                <p style="margin-top: 15px;"><strong>Preview (first 500 chars):</strong></p>
+                <pre style="background: #f5f5f5; padding: 15px; border-radius: 5px; overflow-x: auto; max-height: 300px;">${html.substring(0, 500).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
+                <div style="margin-top: 15px;">
+                  <button class="button" onclick="window.open('${url}', '_blank')" style="background: #667eea; color: white; margin-right: 10px;">Open Original Site</button>
+                  <button class="button" onclick="navigator.clipboard.writeText(\`${html.substring(0, 10000).replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`)" style="background: #667eea; color: white;">Copy HTML (first 10k chars)</button>
+                </div>
+              </div>
+            `;
           })
           .catch(error => {
             proxyIndex++;
