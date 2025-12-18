@@ -186,9 +186,10 @@
     <div class="method-selector">
       <button class="method-btn active" onclick="setMethod('iframe')" id="btn-iframe">Direct Iframe</button>
       <button class="method-btn" onclick="setMethod('proxy')" id="btn-proxy">Proxy Method</button>
+      <button class="method-btn" onclick="setMethod('blob')" id="btn-blob">Blob URL</button>
+      <button class="method-btn" onclick="setMethod('inject')" id="btn-inject">Direct Inject</button>
       <button class="method-btn" onclick="setMethod('dataurl')" id="btn-dataurl">Data URL</button>
       <button class="method-btn" onclick="setMethod('object')" id="btn-object">Object Tag</button>
-      <button class="method-btn" onclick="setMethod('embed')" id="btn-embed">Embed Tag</button>
     </div>
 
     <div id="errorMessage" class="error-message" style="display: none;"></div>
@@ -200,6 +201,7 @@
       <div id="proxyContent" style="display: none; width: 100%; height: 100%; overflow: auto; padding: 20px; color: white;">
         <p>Loading via proxy method...</p>
       </div>
+      <div id="injectContent" style="display: none; width: 100%; height: 100%; overflow: auto; background: white; border-radius: 10px;"></div>
     </div>
 
     <p class="info-text">
@@ -266,10 +268,17 @@
       document.getElementById('embedEmbed').style.display = 'none';
       document.getElementById('proxyContent').style.display = 'none';
       
-      // Remove any existing data URL iframe
+      // Remove any existing dynamic iframes
       const existingDataIframe = document.getElementById('dataUrlFrame');
-      if (existingDataIframe) {
-        existingDataIframe.remove();
+      if (existingDataIframe) existingDataIframe.remove();
+      const existingBlobIframe = document.getElementById('blobUrlFrame');
+      if (existingBlobIframe) existingBlobIframe.remove();
+      
+      // Clear direct inject content
+      const injectDiv = document.getElementById('injectContent');
+      if (injectDiv) {
+        injectDiv.innerHTML = '';
+        injectDiv.style.display = 'none';
       }
 
       // Load based on selected method
@@ -279,6 +288,12 @@
           break;
         case 'proxy':
           loadProxy(currentUrl);
+          break;
+        case 'blob':
+          loadBlobUrl(currentUrl);
+          break;
+        case 'inject':
+          loadDirectInject(currentUrl);
           break;
         case 'dataurl':
           loadDataUrl(currentUrl);
@@ -316,6 +331,157 @@
       embed.style.display = 'block';
     }
 
+    function loadBlobUrl(url) {
+      const proxyDiv = document.getElementById('proxyContent');
+      proxyDiv.style.display = 'block';
+      proxyDiv.innerHTML = '<p style="text-align: center; padding: 20px;">Loading via proxy to create blob URL...</p>';
+
+      // Try multiple proxy services
+      const proxies = [
+        `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+        `https://corsproxy.io/?${encodeURIComponent(url)}`,
+        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
+      ];
+
+      let proxyIndex = 0;
+
+      function tryNextProxy() {
+        if (proxyIndex >= proxies.length) {
+          proxyDiv.innerHTML = `
+            <div style="text-align: center; padding: 40px; color: white;">
+              <p>All proxies failed. Try Direct Inject method.</p>
+              <button class="button" onclick="setMethod('inject'); loadEmbed();" style="margin: 10px;">Try Direct Inject</button>
+            </div>
+          `;
+          return;
+        }
+
+        fetch(proxies[proxyIndex])
+          .then(response => {
+            if (!response.ok) throw new Error('Proxy failed');
+            return response.text();
+          })
+          .then(data => {
+            try {
+              const parsed = JSON.parse(data);
+              var html = parsed.contents || parsed.content || data;
+            } catch (e) {
+              var html = data;
+            }
+            
+            const baseUrl = new URL(url);
+            html = rewriteUrls(html, baseUrl);
+            
+            // Create blob URL
+            const blob = new Blob([html], { type: 'text/html' });
+            const blobUrl = URL.createObjectURL(blob);
+            
+            // Try multiple iframe creation methods
+            try {
+              // Method 1: Create iframe with blob URL
+              const iframe = document.createElement('iframe');
+              iframe.id = 'blobUrlFrame';
+              iframe.style.width = '100%';
+              iframe.style.height = '100%';
+              iframe.style.border = 'none';
+              iframe.src = blobUrl;
+              
+              proxyDiv.innerHTML = '';
+              proxyDiv.appendChild(iframe);
+            } catch (e) {
+              // Method 2: Use srcdoc if available
+              try {
+                const iframe = document.createElement('iframe');
+                iframe.id = 'blobUrlFrame';
+                iframe.style.width = '100%';
+                iframe.style.height = '100%';
+                iframe.style.border = 'none';
+                iframe.srcdoc = html;
+                
+                proxyDiv.innerHTML = '';
+                proxyDiv.appendChild(iframe);
+              } catch (e2) {
+                // Fallback to direct inject
+                setMethod('inject');
+                loadDirectInject(url);
+              }
+            }
+          })
+          .catch(error => {
+            proxyIndex++;
+            tryNextProxy();
+          });
+      }
+
+      tryNextProxy();
+    }
+
+    function loadDirectInject(url) {
+      const injectDiv = document.getElementById('injectContent');
+      injectDiv.style.display = 'block';
+      injectDiv.innerHTML = '<p style="text-align: center; padding: 20px; color: #333;">Loading content...</p>';
+
+      // Try multiple proxy services
+      const proxies = [
+        {
+          url: `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+          parser: (data) => {
+            try {
+              const parsed = JSON.parse(data);
+              return parsed.contents || parsed.content || data;
+            } catch (e) {
+              return data;
+            }
+          }
+        },
+        {
+          url: `https://corsproxy.io/?${encodeURIComponent(url)}`,
+          parser: (data) => data
+        },
+        {
+          url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+          parser: (data) => data
+        }
+      ];
+
+      let proxyIndex = 0;
+
+      function tryNextProxy() {
+        if (proxyIndex >= proxies.length) {
+          injectDiv.innerHTML = `
+            <div style="text-align: center; padding: 40px; color: #333;">
+              <h3>All proxy methods failed</h3>
+              <p>Try opening in a new tab or use a different method.</p>
+              <button class="button" onclick="openInNewTab()" style="margin: 10px; background: #667eea; color: white;">Open in New Tab</button>
+            </div>
+          `;
+          return;
+        }
+
+        const proxy = proxies[proxyIndex];
+        
+        fetch(proxy.url)
+          .then(response => {
+            if (!response.ok) throw new Error('Proxy failed');
+            return response.text();
+          })
+          .then(data => {
+            let html = proxy.parser(data);
+            const baseUrl = new URL(url);
+            html = rewriteUrls(html, baseUrl);
+            
+            // Directly inject HTML (no iframe)
+            injectDiv.innerHTML = html;
+          })
+          .catch(error => {
+            proxyIndex++;
+            tryNextProxy();
+          });
+      }
+
+      tryNextProxy();
+    }
+
     function loadDataUrl(url) {
       const proxyDiv = document.getElementById('proxyContent');
       proxyDiv.style.display = 'block';
@@ -334,27 +500,43 @@
             const parsed = JSON.parse(data);
             const html = parsed.contents || parsed.content || data;
             
-            // Create iframe with data URL
-            const iframe = document.createElement('iframe');
-            iframe.id = 'dataUrlFrame';
-            iframe.style.width = '100%';
-            iframe.style.height = '100%';
-            iframe.style.border = 'none';
-            iframe.sandbox = 'allow-same-origin allow-scripts allow-forms allow-popups allow-modals';
-            
-            // Create data URL from HTML
-            const baseUrl = new URL(url);
-            const processedHtml = rewriteUrls(html, baseUrl);
-            const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(processedHtml);
-            
-            proxyDiv.innerHTML = '';
-            proxyDiv.appendChild(iframe);
-            iframe.src = dataUrl;
+            // Try using srcdoc first (works better on some filters)
+            try {
+              const iframe = document.createElement('iframe');
+              iframe.id = 'dataUrlFrame';
+              iframe.style.width = '100%';
+              iframe.style.height = '100%';
+              iframe.style.border = 'none';
+              
+              const baseUrl = new URL(url);
+              const processedHtml = rewriteUrls(html, baseUrl);
+              
+              // Use srcdoc instead of data URL (might bypass some filters)
+              iframe.srcdoc = processedHtml;
+              
+              proxyDiv.innerHTML = '';
+              proxyDiv.appendChild(iframe);
+            } catch (e) {
+              // Fallback to data URL
+              const iframe = document.createElement('iframe');
+              iframe.id = 'dataUrlFrame';
+              iframe.style.width = '100%';
+              iframe.style.height = '100%';
+              iframe.style.border = 'none';
+              
+              const baseUrl = new URL(url);
+              const processedHtml = rewriteUrls(html, baseUrl);
+              const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(processedHtml);
+              
+              proxyDiv.innerHTML = '';
+              proxyDiv.appendChild(iframe);
+              iframe.src = dataUrl;
+            }
           } catch (e) {
             proxyDiv.innerHTML = `
               <div style="text-align: center; padding: 40px; color: white;">
-                <p>Failed to load. Try the Proxy Method instead.</p>
-                <button class="button" onclick="setMethod('proxy'); loadEmbed();" style="margin: 10px;">Try Proxy Method</button>
+                <p>Failed to load. Try the Direct Inject method instead.</p>
+                <button class="button" onclick="setMethod('inject'); loadEmbed();" style="margin: 10px;">Try Direct Inject</button>
               </div>
             `;
           }
@@ -362,8 +544,8 @@
         .catch(error => {
           proxyDiv.innerHTML = `
             <div style="text-align: center; padding: 40px; color: white;">
-              <p>Failed to fetch content. Try another method.</p>
-              <button class="button" onclick="setMethod('proxy'); loadEmbed();" style="margin: 10px;">Try Proxy Method</button>
+              <p>Failed to fetch content. Try Direct Inject method.</p>
+              <button class="button" onclick="setMethod('inject'); loadEmbed();" style="margin: 10px;">Try Direct Inject</button>
             </div>
           `;
         });
@@ -394,10 +576,6 @@
         {
           url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
           parser: (data) => data
-        },
-        {
-          url: `https://cors-anywhere.herokuapp.com/${url}`,
-          parser: (data) => data
         }
       ];
 
@@ -408,7 +586,8 @@
           proxyDiv.innerHTML = `
             <div style="text-align: center; padding: 40px; color: white;">
               <h3 style="margin-bottom: 20px;">Proxy methods failed</h3>
-              <p style="margin-bottom: 20px;">Try opening in a new tab or use a different method above.</p>
+              <p style="margin-bottom: 20px;">Try Direct Inject method - it might work better on filtered networks.</p>
+              <button class="button" onclick="setMethod('inject'); loadEmbed();" style="margin: 10px;">Try Direct Inject</button>
               <button class="button" onclick="openInNewTab()" style="margin: 10px;">Open in New Tab</button>
             </div>
           `;
@@ -425,26 +604,44 @@
           .then(data => {
             let html = proxy.parser(data);
             
-            // Create a sandboxed iframe to render the HTML
-            const iframe = document.createElement('iframe');
-            iframe.style.width = '100%';
-            iframe.style.height = '100%';
-            iframe.style.border = 'none';
-            iframe.sandbox = 'allow-same-origin allow-scripts allow-forms allow-popups allow-modals';
-            
             // Rewrite relative URLs to absolute URLs
             const baseUrl = new URL(url);
             html = rewriteUrls(html, baseUrl);
             
-            // Clear and add iframe
-            proxyDiv.innerHTML = '';
-            proxyDiv.appendChild(iframe);
-            
-            // Write HTML to iframe
-            const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-            iframeDoc.open();
-            iframeDoc.write(html);
-            iframeDoc.close();
+            // Try multiple iframe creation methods
+            try {
+              // Method 1: Try srcdoc first (often works better with filters)
+              const iframe = document.createElement('iframe');
+              iframe.style.width = '100%';
+              iframe.style.height = '100%';
+              iframe.style.border = 'none';
+              iframe.srcdoc = html;
+              
+              proxyDiv.innerHTML = '';
+              proxyDiv.appendChild(iframe);
+            } catch (e) {
+              // Method 2: Try writing to iframe document
+              try {
+                const iframe = document.createElement('iframe');
+                iframe.style.width = '100%';
+                iframe.style.height = '100%';
+                iframe.style.border = 'none';
+                iframe.sandbox = 'allow-same-origin allow-scripts allow-forms allow-popups allow-modals';
+                
+                proxyDiv.innerHTML = '';
+                proxyDiv.appendChild(iframe);
+                
+                const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                iframeDoc.open();
+                iframeDoc.write(html);
+                iframeDoc.close();
+              } catch (e2) {
+                // Method 3: Fallback to direct inject if iframes are blocked
+                console.log('Iframe blocked, trying direct inject');
+                setMethod('inject');
+                loadDirectInject(url);
+              }
+            }
           })
           .catch(error => {
             proxyIndex++;
