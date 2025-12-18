@@ -90,10 +90,54 @@
 <body>
   <div class="container">
     <h1>🧮 TI-84 Calculator</h1>
-    <div class="calculator-wrapper">
-      <iframe src="https://ti84calc.com/ti84calc" width="600px" height="800px" frameborder="0" allow="fullscreen"></iframe>
+    <div id="iframeContainer" class="calculator-wrapper">
+      <iframe id="calculatorFrame" src="https://84calc.com/" width="600px" height="800px" frameborder="0" allow="fullscreen"></iframe>
     </div>
-    <a href="index.html" class="back-button">← Back to Home</a>
+    <div id="fallbackMessage" style="display: none; color: white; margin: 20px 0; padding: 20px; background: rgba(255, 255, 255, 0.1); border-radius: 10px;">
+      <p style="margin-bottom: 15px;">If the calculator doesn't load, try opening it directly:</p>
+      <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+        <a href="https://84calc.com/" target="_blank" class="back-button" style="margin-top: 0;">Open 84calc.com</a>
+        <a href="https://calc84.com/" target="_blank" class="back-button" style="margin-top: 0;">Open Calc84.com</a>
+        <a href="https://www.meta-calculator.com/online/" target="_blank" class="back-button" style="margin-top: 0;">Open Meta Calculator</a>
+      </div>
+    </div>
+    <div style="margin-top: 15px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+      <button onclick="changeCalculator('https://84calc.com/')" class="back-button" style="margin-top: 0;">84calc.com</button>
+      <button onclick="changeCalculator('https://calc84.com/')" class="back-button" style="margin-top: 0;">Calc84.com</button>
+      <button onclick="changeCalculator('https://www.meta-calculator.com/online/')" class="back-button" style="margin-top: 0;">Meta Calculator</button>
+    </div>
+    <a href="index.html" class="back-button" style="margin-top: 15px;">← Back to Home</a>
+    
+    <script>
+      function changeCalculator(url) {
+        document.getElementById('calculatorFrame').src = url;
+      }
+      
+      // Check if iframe loads successfully
+      const frame = document.getElementById('calculatorFrame');
+      let loadTimeout;
+      
+      frame.onload = function() {
+        clearTimeout(loadTimeout);
+        document.getElementById('fallbackMessage').style.display = 'none';
+      };
+      
+      // Show fallback if iframe doesn't load within 5 seconds
+      loadTimeout = setTimeout(function() {
+        document.getElementById('fallbackMessage').style.display = 'block';
+      }, 5000);
+      
+      // Also check for errors
+      frame.onerror = function() {
+        document.getElementById('fallbackMessage').style.display = 'block';
+        // Try next alternative
+        if (frame.src.includes('84calc.com')) {
+          frame.src = 'https://calc84.com/';
+        } else if (frame.src.includes('calc84.com')) {
+          frame.src = 'https://www.meta-calculator.com/online/';
+        }
+      };
+    </script>
   </div>
 </body>
 </html>
